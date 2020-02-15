@@ -5,3 +5,5 @@
 ^renv.lock$
 ^.circleci$
 ^.yo-rc.json$
+^renv$
+^renv\.lock$
