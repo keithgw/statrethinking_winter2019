@@ -359,4 +359,4 @@ Summarize
 
 # What we didn't cover:  
 - How to use software to estimate the posterior.  
-- Changing the likelihood function (e.g Binomial(n, p) and other "GLM"s).  
+- Changing the likelihood function (e.g.  $Binomial(n, p)$ and other "GLM"s).  

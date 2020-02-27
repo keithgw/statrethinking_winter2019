@@ -1,0 +1,445 @@
+---
+title: "Rethinking Linear Regression"
+author: "Keith Williams"
+date: "2020-02-27"
+output: 
+  ioslides_presentation:
+    widescreen: true
+---
+
+<style>
+pre {
+  font-size: 14px;
+  line-height: 15px;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(messages=FALSE, warnings=FALSE, cache=TRUE)
+```
+
+## Motivation
+For a long time, a trusty interview question:  
+
+*"Explain to me linear regression as if I was a business manager....*  
+
+*...Describe to me an alternative method and its tradeoffs."*  
+
+## Motivation
+For a long time, a trusty interview question:  
+
+*"Explain to me linear regression as if I was a business manager....*  
+
+*...Describe to me an alternative method and its tradeoffs."*  
+
+![](statisticalRethinkingCover.png)
+
+## What I hope you get out of this
+- A deeper understanding of regression models.  
+- An introduction to Bayesian Inference.  
+- A desire to learn more.  
+
+## OLS, an old story
+$$ y_i = \beta_0 + \beta_1 x_i + \epsilon_i $$  
+
+## OLS, an old story
+$$ y_i = \beta_0 + \beta_1 x_i + \epsilon_i $$  
+$\epsilon$ is doing a lot of work!  
+$$ \hat{y}_i = \beta_0 + \beta_1 x_i $$
+Assumptions aren't obvious. e.g. how is $Y$ distributed?  
+Are we going to learn $\epsilon$?  
+
+## Rewritten as Bayesian
+$$ y_i \sim \mathcal{N}(\mu, \sigma) $$  
+Assumption: $Y$ has a mean and finite variance.  
+
+The Normal distribution makes the fewest assumptions about the shape of the distribution, i.e. it is a maximum entropy distribution.  
+
+This is the *data generating distribution* and we will call it the *likelihood function*
+
+## Rewritten as Bayesian
+$$ y_i \sim \mathcal{N}(\mu, \sigma) $$  
+Rewrite $\mu$ in terms of $\beta$  
+$$ \mu = \beta_0 $$
+
+## Rewritten as Bayesian
+$$ y_i \sim \mathcal{N}(\mu_i, \sigma) $$  
+$$ \mu_i = \beta_0 + \beta_1 x_i $$  
+
+Add in a predictor, every value of $X$ gets its own mean $\mu$  
+
+## Rewritten as Bayesian  
+<div class="columns-2">
+Using $\epsilon$ notation.  
+$$ y_i = \mu_i + \epsilon_i $$  
+$$ \mu_i = \beta_0 + \beta_1 x_i $$  
+$$ \epsilon_i \sim \mathcal{N}(0, \sigma) $$
+Say "goodbye" to $\epsilon$, we're left with a more general form.  
+$$ y_i \sim \mathcal{N}(\mu_i, \sigma) $$  
+$$ \mu_i = \beta_0 + \beta_1 x_i $$  
+</div>
+
+## An example with code
+```{r, echo=FALSE, messages=FALSE, warnings=FALSE, output = 'hide'}
+library(tidyverse)
+theme_set(theme_minimal())
+library(brms)
+```
+
+```{r}
+data(Howell1, package = "rethinking")
+adult_heights <- filter(Howell1, age >= 18)
+glimpse(adult_heights)
+```
+Model:  
+$$ height_i \sim \mathcal{N}(\mu_i, \sigma) $$
+$$ \mu_i = \beta_0 + \beta_1 weight_i $$  
+
+## An example with code {#io-example .reveal}
+<div class="columns-2">
+```{r, eval = FALSE}
+# get summary statistics of height
+min_height <- min(adult_heights$height)
+max_height <- max(adult_heights$height)
+mean_height <- mean(adult_heights$height)
+sd_height <- sd(adult_heights$height)
+
+estimated_heights <- tibble(
+  height = seq(min_height, max_height)) %>% 
+  mutate(
+    # here's the important bit
+    density = dnorm(
+      x = height, 
+      mean = mean_height, 
+      sd = sd_height)
+  )
+
+ggplot(adult_heights, aes(x = height)) + 
+  geom_density() +
+  geom_line(
+    data=estimated_heights, 
+    aes(y = density), 
+    color = "red"
+  ) +
+  theme(text = element_text(size = 25))
+```
+$height_i \sim \mathcal{N}(154.6, 7.7)$  
+```{r, echo = FALSE, fig.height = 4, fig.width = 4}
+min_height <- min(adult_heights$height)
+max_height <- max(adult_heights$height)
+mean_height <- mean(adult_heights$height)
+sd_height <- sd(adult_heights$height)
+
+estimated_heights <- tibble(height = seq(min_height, max_height, by = 1)) %>% 
+  mutate(density = dnorm(height, mean_height, sd_height))
+
+ggplot(adult_heights, aes(x = height)) + 
+  geom_density() +
+  geom_line(data=estimated_heights, aes(y = density), color = "red") +
+  theme_minimal() +
+  theme(title = element_text(size = 16)) +
+  labs(x = "height (cm)")
+```
+</div>
+
+## An example with code
+<div class="columns-2">
+Add weight as a predictor:  
+$$ height_i \sim \mathcal{N}(\mu_i, 7.7) $$
+$$ \mu_i = 114 + 0.90 weight_i $$  
+
+```{r, eval=FALSE}
+adult_heights %>% 
+  mutate(
+    # mu is a function of weight
+    mu = beta[1] + beta[2] * weight,
+    # use sigma to create a prediction interval
+    lower = estimate - 1.64 * sd_height,
+    upper = estimate + 1.64 * sd_height
+  ) %>%
+  ggplot(aes(x = weight)) + 
+  geom_smooth(
+    aes(ymin = lower, ymax = upper, y = mu), 
+    stat = "identity") + 
+  geom_point(aes(y = height))
+```
+<br><br><br>
+```{r, echo=FALSE, fig.height = 4, fig.width = 4}
+beta <- lm(height ~ weight, data = adult_heights)$coef
+
+adult_heights %>% 
+  mutate(
+    estimate = beta[1] + beta[2] * weight,
+    lower = estimate - 1.64 * sd_height,
+    upper = estimate + 1.64 * sd_height
+  ) %>%
+  ggplot(aes(x = weight)) + 
+  geom_smooth(aes(ymin = lower, ymax = upper, y = estimate), stat = "identity") + 
+  geom_point(aes(y = height), alpha = 0.5) +
+  theme_minimal() +
+  labs(x = "weight (kg)", y = "height (cm)", title = "Many Normal Distributions", subtitle = "90% probability interval") +
+  theme(text = element_text(size = 14))
+```
+</div>
+
+## The Target of Bayesian Inference
+<div class="columns-2">
+$$ P(\mu, \sigma | heights) $$
+```{r, eval = FALSE}
+sampled_heights <- numeric(length = 1000)
+for (i in 1:1000) {
+  # sample a value for mu and sigma
+  sample_mu <- sample(probability_mu, 1)
+  sample_sigma <- sample(probability_sigma, 1)
+  
+  # generate data according to our likelihood function
+  sampled_heights[i] <- rnorm(1, sample_mu, sample_sigma)
+}
+sampled_heights_df <- tibble(
+  height = sampled_heights, 
+  src = "sampled"
+)
+
+adult_heights %>% 
+  select(height) %>% 
+  mutate(src = "data") %>% 
+  bind_rows(sampled_heights_df) %>% 
+  ggplot(aes(x = height, color = src)) + 
+  geom_density()
+```
+```{r, echo = FALSE, fig.height = 4, fig.width = 5}
+posterior <- expand.grid(
+  mu = seq(140, 160, length.out=200),
+  sigma = seq(4, 9, length.out = 200)
+) %>% 
+  mutate(
+    log_likelihood = purrr::map2_dbl(
+      mu, sigma, 
+      ~sum(dnorm(adult_heights$height, mean = .x, sd = .y, log=TRUE))
+    ),
+    log_prior_mu = purrr::map_dbl(mu, ~dnorm(.x, 170, 20, log=TRUE)),
+    log_prior_sigma = purrr::map_dbl(sigma, ~dexp(.x, 1, log=TRUE)),
+    log_posterior = log_likelihood + log_prior_mu + log_prior_sigma,
+    scaled_log_posterior = log_posterior - max(log_posterior),
+    probability = exp(scaled_log_posterior)
+  )
+
+sampled_rows <- sample(1:nrow(posterior), size = 1000, prob = posterior$probability)
+sampled_heights <- rnorm(1000, posterior$mu[sampled_rows], posterior$sigma[sampled_rows])
+
+adult_heights %>% 
+  select(height) %>% 
+  mutate(src = "data") %>% 
+  bind_rows(tibble(height = sampled_heights, src = "sampled")) %>% 
+  ggplot(aes(x = height, color = src)) + 
+  geom_density() +
+  theme_minimal() +
+  theme(text = element_text(size = 16)) +
+  labs(color = "source", x = "height (cm)") +
+  scale_color_manual(values = c("black", "red"))
+```
+</div>
+
+## Bayes' Theorem  
+The target of inference: $P(\mu, \sigma|height)$  
+
+$$ P(\mu, \sigma|height) = \frac{\prod_i\mathcal{N}(h_i|\mu, \sigma)P(\mu, \sigma)}{\int\int\prod_i\mathcal{N}(h_i|\mu, \sigma)P(\mu, \sigma) d\mu d\sigma} $$  
+
+## Bayes' Theorem  
+The target of inference: $P(\mu, \sigma|height)$  
+
+$$ P(\mu, \sigma|height) = \frac{\prod_i\mathcal{N}(h_i|\mu, \sigma)P(\mu, \sigma)}{\int\int\prod_i\mathcal{N}(h_i|\mu, \sigma)P(\mu, \sigma) d\mu d\sigma} $$  
+$$ height_i \sim \mathcal{N}(\mu, \sigma) $$
+$$ \mu \sim \mathcal{N}(170, 20) $$
+$$ \sigma \sim Uniform(0, 50) $$
+
+## Bayes' Theorem  
+The target of inference: $P(\beta_0, \beta_1, \sigma|height, weight)$  
+
+$$ P(\beta_0, \beta_1, \sigma|height, weight) \propto \prod_i\mathcal{N}(h_i|\beta_0, \beta_1, weight_i, \sigma)P(\beta_0, \beta_1, \sigma) $$  
+$$ height_i \sim \mathcal{N}(\mu_i, \sigma) $$
+$$ \mu_i = \beta_0 + \beta_1 weight_i $$
+$$ \beta_0 \sim \mathcal{N}(170, 20) $$ 
+$$ \beta_1 \sim \mathcal{N}(0, 10) $$
+$$ \sigma \sim Uniform(0, 50) $$
+
+## Bayes' Theorm
+Calculating the Posterior 
+```{r, eval=FALSE}
+# data structure for holding joint probability for any (mu, sigma) tuple
+posterior_probability <- data.frame(mu = c(), sigma = c(), unscaled_probability = c())
+
+# update posterior
+for (mu in all_mus) {
+  for (sigma in all_sigmas) {
+    prior_prob_mu <- dnorm(mu, 170, 20)
+    prior_prob_sigma <- dunif(sigma, 0, 50)
+    likelihood <- product(
+      for (height in adult_heights$height) {
+        dnorm(height, mu, sigma)
+      }
+    )
+    unscaled_probability <- likelihood * prior_prob_mu * prior_prob_sigma
+    posterior_probability <- bind_rows(posterior_probability, data.frame(mu, sigma, unscaled_probability))
+  }
+}
+
+# scale probabilities such that sum(probability) = 1
+mutate(posterior_probability, probability = unscaled_probability / sum(unscaled_probability))
+```
+
+## Back to heights, conveying uncertainty
+<div class="columns-2">
+1. sample a $\beta_0$ and a $\beta_1$ from the posterior.  
+2. Plot the line.  
+3. Repeat to convey uncertainty.  
+```{r, cache=TRUE, output='hide', echo=FALSE, message=FALSE}
+mdl <- brm(
+  formula = height ~ weight,
+  data = adult_heights, 
+  family = gaussian(),
+  prior = c(
+    prior(normal(170, 20), class = Intercept),
+    prior(normal(0, 10), class = b),
+    prior(exponential(1), class = sigma)
+  ),
+  chains = 2, cores = 2
+)
+```
+<br><br>
+```{r, echo = FALSE, fig.height = 5, fig.width = 5}
+posterior <- posterior_samples(mdl)
+
+pred_int <- tibble(
+  weight = seq(min(adult_heights$weight), max(adult_heights$weight), length.out=nrow(adult_heights))
+) %>% 
+  mutate(
+    posterior = purrr::map(weight, 
+      ~rnorm(10 * nrow(posterior), mean = posterior$b_Intercept + .x * posterior$b_weight, sd = posterior$sigma)),
+    ci = purrr::map(posterior, ~quantile(.x, probs = c(0.025, 0.975))),
+    lower = purrr::map_dbl(ci, ~.x[1]),
+    upper = purrr::map_dbl(ci, ~.x[2])
+  )
+
+n_lines <- 20
+ggplot() +
+  geom_ribbon(data = pred_int, aes(x = weight, ymin = lower, ymax = upper), alpha = 0.1) +
+  geom_abline(data = head(posterior, n_lines), aes(intercept = b_Intercept, slope = b_weight), alpha = 0.3, color = "steelblue") +
+  geom_point(data = adult_heights, aes(weight, height), alpha = 0.4) +
+  theme_minimal() +
+  theme(text = element_text(size = 14)) +
+  labs(title = "20 sampled regression lines \n w/ prediction interval", x = "weight (kg)", y = "height (cm)")
+```
+</div>
+
+## Hidden Assumptions  
+What are the priors for OLS?  
+$$ height_i = \beta_0 + \beta_1 weight_i + \epsilon $$  
+
+## Hidden Assumptions  
+What are the priors for OLS?  
+$$ height_i = \beta_0 + \beta_1 weight_i + \epsilon $$  
+Flat priors, we can do better.  
+
+## Priors as regularization  
+<div class="columns-2">
+$height_i \sim \mathcal{N}(\mu_i, \sigma)$  
+$\mu_i = \beta_0 + \beta_1 weight_i$  
+$\beta_0 \sim \mathcal{N}(170, 20)$  
+$\beta_1 \sim \mathcal{N}(0, 10)$  
+$\sigma \sim Uniform(0, 50)$  
+```{r, eval = FALSE}
+sample_betas <- function(slope_sd, n_lines) {
+  tibble(
+    intercept = rnorm(n_lines, mean = 170, sd = 20),
+    slope = rnorm(n_lines, mean = 0, sd = slope_sd),
+    slope_sd = slope_sd
+  )
+}
+
+purrr::map_df(c(0.5, 2, 10), 
+              ~sample_betas(.x, n_lines = 60)) %>% 
+  ggplot(aes(intercept = intercept, slope = slope)) + 
+  geom_abline() +
+  facet_wrap(~slope_sd)
+```
+<br><br>
+```{r, echo = FALSE, warning = FALSE, fig.height = 5, fig.width = 5}
+sample_betas <- function(slope_sd, n_lines) {
+  tibble(
+    intercept = rnorm(n_lines, mean = 170, sd = 20),
+    slope = rnorm(n_lines, mean = 0, sd = slope_sd),
+    slope_sd = as.character(slope_sd)
+  )
+}
+n_lines <- 60
+slope_sds <- c(0.1, 1, 10)
+
+purrr::map_df(slope_sds, ~sample_betas(.x, n_lines)) %>% 
+  mutate(slope_sd = forcats::fct_relevel(slope_sd, levels = as.character(slope_sds))) %>% 
+  ggplot() + 
+  geom_abline(aes(intercept = intercept, slope = slope), alpha = 0.5, color = "steelblue") +
+  scale_x_continuous(limits = c(0, 120)) + 
+  scale_y_continuous(limits = c(0, 300)) +
+  facet_wrap(~slope_sd) +
+  theme_minimal() +
+  theme(text = element_text(size = 14)) +
+  labs(x = "weight (kg)", y = "height (cm)", title = "Different Priors for Slope parameter")
+```
+</div>
+
+## Priors as regularization  
+$$ P(\beta_0, \beta_1, \sigma|height, weight) \propto \prod_i\mathcal{N}(h_i|\beta_0, \beta_1, weight_i, \sigma)P(\beta_0, \beta_1, \sigma) $$  
+
+## Priors as regularization  
+```{r, echo = FALSE, cache = TRUE, output='hide', message=FALSE}
+mdl_r <- brm(
+  formula = height ~ weight,
+  data = adult_heights, 
+  family = gaussian(),
+  prior = c(
+    prior(normal(170, 20), class = Intercept),
+    prior(normal(0, 0.1), class = b),
+    prior(exponential(1), class = sigma)
+  ),
+  chains = 2, cores = 2
+)
+```
+
+$$ P(\beta_0, \beta_1, \sigma|height, weight) \propto \prod_i\mathcal{N}(h_i|\beta_0, \beta_1, weight_i, \sigma)P(\beta_0, \beta_1, \sigma) $$
+<div style="float: left; width; 30%;">
+$height_i \sim \mathcal{N}(\mu_i, \sigma)$  
+$\mu_i = \beta_0 + \beta_1 weight_i$  
+$\beta_0 \sim \mathcal{N}(170, 20)$  
+$\beta_1 \sim \mathcal{N}(0, 0.1)$  
+$\sigma \sim Uniform(0, 50)$
+</div>
+<div style="float: right; width; 70%">
+```{r, echo = FALSE, fig.width = 6, fig.height = 4}
+posterior_r <- posterior_samples(mdl_r)
+
+n_lines <- 60
+ggplot() +
+  geom_abline(data = head(posterior_r, n_lines), aes(intercept = b_Intercept, slope = b_weight), alpha = 0.3, color = "steelblue") +
+  geom_point(data = adult_heights, aes(weight, height), alpha = 0.5) +
+  geom_abline(intercept = mean(posterior$b_Intercept), slope = mean(posterior$b_weight), color = "orange1", size = 2) + 
+  theme_minimal() +
+  theme(text = element_text(size = 14), title = element_text(size = 12)) +
+  labs(
+    title = "60 sampled regression lines w/ regularizing prior", 
+    subtitle = "prior: N(0, 0.1), orange line represents MAP estimate from flat prior",
+    x = "weight (kg)", 
+    y = "height (cm)"
+  )
+```
+</div>
+
+## Summarize  
+1. Writing linear models as a likelihood, and modeling parameters as a linear model is a more general form that makes assumptions explicit.  
+2. The target of Bayesian regression is a posterior probability on all estimated parameters.  
+3. Posterior probabilites are learned as a product of the likelihood of your data and prior probabilities on the parameters of the likelihood.  
+4. Priors can be used to encode your domain knowledge and to regularlize estimates.  
+
+### What we didn't cover:  
+- How to use software to estimate the posterior.  
+- Changing the likelihood function (e.g.  $Binomial(n, p)$ and other "GLM"s).  
