@@ -1,0 +1,81 @@
+---
+title: "Chapter 13"
+output: 
+  html_document:
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+theme_set(theme_minimal())
+library(brms)
+```
+
+```{r}
+data("UCBAdmissions")
+ucb <- as_tibble(UCBAdmissions) %>% 
+  mutate_at(c("Gender", "Admit"), stringr::str_to_lower) %>% 
+  spread(Admit, n) %>%
+  mutate(applications = admitted + rejected)
+```
+
+```{r}
+m_ucb_intercepts <- brm(
+  formula = admitted | trials(applications) ~ 1 + (1 | Dept) + Gender,
+  data = ucb, 
+  family = binomial,
+  prior = c(
+    prior(normal(0, 10), class = Intercept),
+    prior(normal(0, 2), class = b),
+    prior(cauchy(0, 2), class = sd)
+  ),
+  iter = 4500, warmup = 500,
+  chains = 4, cores = 4
+)
+```
+
+```{r}
+bayesplot::mcmc_areas_ridges(m_ucb_intercepts, pars = vars(-`lp__`))
+```
+```{r}
+m_ucb_slopes <- brm(
+  formula = admitted | trials(applications) ~ 1 + Gender + (1 + Gender | Dept),
+  data = ucb,
+  family = binomial,
+  prior = c(
+    prior(normal(0, 10), class = Intercept),
+    prior(normal(0, 1), class = b),
+    prior(cauchy(0, 2), class = sd),
+    prior(lkj(2), class = cor)
+  ),
+  iter = 5000, warmup = 1000, chains = 4, cores = 4
+)
+```
+
+```{r}
+plot(m_ucb_slopes)
+```
+
+```{r}
+bayesplot::mcmc_areas_ridges(m_ucb_slopes, pars = vars(-lp__))
+```
+
+```{r}
+ucb %>% 
+  mutate(rate = admitted / applications) %>% 
+  ggplot(aes(Dept, rate, fill = Gender, alpha = applications)) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Simpson's Paradox", subtitle = "Admission Rates by Dept + Gender")
+```
+
+```{r}
+bayesplot::mcmc_intervals(m_ucb_slopes, pars = vars(-lp__))
+```
+
+```{r}
+posterior_samples(m_ucb_slopes) %>% 
+  ggplot(aes(cor_Dept__Intercept__Gendermale)) + 
+  geom_density()
+```
+
