@@ -12,6 +12,8 @@ LABEL org.redventures.image.authors="Keith Williams" \
 
 WORKDIR ${APP_ROOT}
 
+RUN apt-get install libv8-3.14-dev -y
+
 # Set base repos to `rvcran` and CRAN
 RUN Rscript -e "options(repos = c(CRAN = 'https://cran.rstudio.com', rvcran = 'https://data-science-read:AKCp5ccb3kdWDAHSq4uG6iTHCmjC4yTzsaPH2ot2YTLvRXi6zwLWGj9PQGeZMPFA8R4UC6Kx6@redventures.jfrog.io/redventures/rv-cran'))"
 
@@ -25,7 +27,5 @@ RUN R -e 'remotes::install_github("rstudio/renv@0.7.1-20"); library(renv)'
 COPY ./renv.lock .
 RUN Rscript -e 'renv::consent(provided = TRUE);'
 RUN Rscript -e "renv::restore(library = '/usr/lib/R/site-library');"
-
-RUN apt-get install libv8-3.14-dev -y
 
 CMD ["/init"]
